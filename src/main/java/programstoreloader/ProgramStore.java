@@ -13,6 +13,7 @@ import java.util.Arrays;
 import ghidra.GhidraApplicationLayout;
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteProvider;
+import ghidra.framework.ApplicationProperties;
 
 
 public class ProgramStore {
@@ -224,6 +225,28 @@ public class ProgramStore {
 		return (getDataCRC() == bcmHeader.ulcrc);
 	}
 	
+	private String getProgramStorePath() throws IOException {
+		
+		GhidraApplicationLayout appLayout = new GhidraApplicationLayout();
+		ApplicationProperties properties = appLayout.getApplicationProperties();
+		System.out.println(properties);
+		// 9.1.2: ~/ghidra_9.1.2/Ghidra/Extensions/ProgramStoreLoader
+		File f = new File(appLayout.getApplicationInstallationDir() + "/Ghidra/Extensions/ProgramStoreLoader/lib/ProgramStore");
+		if(f.exists()) {
+			return f.getCanonicalPath();
+		}
+		// 9.2: ~/.ghidra/.ghidra_9.2_PUBLIC/Extensions/ProgramStoreLoader
+		f = new File(appLayout.getUserSettingsDir() + "/Extensions/ProgramStoreLoader/lib/ProgramStore");
+		if(f.exists()) {
+			return f.getCanonicalPath();
+		}
+		// run/debug from Eclipse
+		f = new File("./lib/ProgramStore");
+		if(f.exists()) {
+			return f.getCanonicalPath();
+		}
+		return "";
+	}
 	/**
 	 * Runs Broadcom's ProgramStore binary to extract 'infile' into
 	 * 'outfile'.
@@ -238,18 +261,7 @@ public class ProgramStore {
 	private void extract(String infile, String outfile) throws Exception {
 				
 		try {
-			String path;
-			File f = new File("./lib/ProgramStore");
-			// testing mode (run from Eclipse)
-			if(f.exists()) {
-				path = f.getCanonicalPath();
-			}
-			// extension installed mode
-			else {
-				GhidraApplicationLayout appLayout = new GhidraApplicationLayout();
-				path = appLayout.getExtensionInstallationDir() + "/ProgramStoreLoader/lib/ProgramStore";
-			}
-			String[] command = {path, "-x", "-f", infile, "-o", outfile};
+			String[] command = {getProgramStorePath(), "-x", "-f", infile, "-o", outfile};
 			Process process = Runtime.getRuntime().exec(command);
 		    process.waitFor();
 		    if(process.exitValue() == 0) {

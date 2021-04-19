@@ -1,8 +1,8 @@
 # ProgramStore Ghidra Loader
 
- A Broadcom ProgramStore firmware image loader for Ghidra (9.1.2).
+A Broadcom ProgramStore firmware image loader for Ghidra (9.1.2 and 9.2).
  
- This loader will auto-detect ProgramStore firmware images from their header and display header information in a dialog box. On load, it takes care of decompressing the raw binary and loads both .text and .data sections.
+This loader will auto-detect ProgramStore firmware images from their header and display header information in a dialog box. On load, it takes care of decompressing the raw binary and loads both .text and .data sections.
  
 ## Known Limitations
  
@@ -18,10 +18,6 @@ The loader does not validate the header CRC or the data CRC at the moment. Two m
  
 Overlays for BSS, stack, and heap region are in the works but are not ready yet. This will be added in the next release.
 
-### Ghidra 9.2
-
-The loader does not support Ghidra 9.2 yet.
- 
 ## Installation
  
 If you just want to install the loader into a existing Ghidra installation:

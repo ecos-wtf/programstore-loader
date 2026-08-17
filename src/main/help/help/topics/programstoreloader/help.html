@@ -9,15 +9,17 @@
     <META name="GENERATOR" content="Microsoft FrontPage 4.0">
     <META name="ProgId" content="FrontPage.Editor.Document">
 
-    <TITLE>Skeleton Help File for a Module</TITLE>
-    <LINK rel="stylesheet" type="text/css" href="../../shared/Frontpage.css">
+    <TITLE>Broadcom ProgramStore Loader</TITLE>
+    <LINK rel="stylesheet" type="text/css" href="help/shared/DefaultStyle.css">
   </HEAD>
 
   <BODY>
-    <H1><a name="HelpAnchor"></a>Skeleton Help File for a Module</H1>
+    <H1><a name="HelpAnchor"></a>Broadcom ProgramStore Loader</H1>
 
-    <P>This is a simple skeleton help topic. For a better description of what should and should not
-    go in here, see the "sample" Ghidra extension in the Extensions/Ghidra directory, or see your 
-    favorite help topic. In general, language modules do not have their own help topics.</P>
+    <P>The ProgramStore loader detects Broadcom ProgramStore firmware images, decompresses them,
+    and maps their text and data sections into a big-endian 32-bit MIPS program.</P>
+
+    <P>The bundled decompressor is a statically linked Linux x86 executable. The loader reports a
+    clear import error if that executable is unavailable or cannot run on the host.</P>
   </BODY>
 </HTML>

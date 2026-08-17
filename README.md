@@ -38,6 +38,10 @@ gradle buildExtension
 
 The installable extension archive is written to `dist/`. You can also import the project into Eclipse with the matching GhidraDev extension for debugging.
 
+## Releases
+
+Pushing a tag whose commit is contained in `main` builds the extension against Ghidra 12.1.2 and publishes the resulting archive to a GitHub Release named after the tag. Tags created from commits outside `main` are rejected by the release workflow.
+
 ## Contributing & Support
 
 - Fork, modify and pull request to contribute, don't hesitate to open issues suggesting features, reporting bugs, asking for documentation or changes, etc

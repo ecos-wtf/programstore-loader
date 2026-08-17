@@ -1,6 +1,6 @@
 # ProgramStore Ghidra Loader
 
-A Broadcom ProgramStore firmware image loader for Ghidra (9.1.2 and 9.2).
+A Broadcom ProgramStore firmware image loader for Ghidra 12.x (verified with Ghidra 12.1.2).
  
 This loader will auto-detect ProgramStore firmware images from their header and display header information in a dialog box. On load, it takes care of decompressing the raw binary and loads both .text and .data sections.
  
@@ -8,7 +8,7 @@ This loader will auto-detect ProgramStore firmware images from their header and 
  
 ### Decompression
  
-The loader rely on a statically linked x86 binary compiled from Broadcom's [aeolus](https://github.com/Broadcom/aeolus/tree/master/ProgramStore) project to perform the decompression. I tried to implement the LZMA decompression in pure Java but the ProgramStore format does not exactly follow the LZMA header structure which tends to mess with the only LZMA library available for Java. If you want to give it a try, and succeed, feel free to submit a [pull request](https://github.com/ecos-wtf/programstore-loader) and I'll happily merge it.
+The loader relies on a statically linked Linux x86 binary compiled from Broadcom's [aeolus](https://github.com/Broadcom/aeolus/tree/master/ProgramStore) project to perform the decompression. This limits the extension to Linux hosts on which that executable can run. The ProgramStore format does not exactly follow the standard LZMA header structure, so a pure Java LZMA decoder cannot be used directly.
 
 ### CRC validation
  
@@ -20,18 +20,23 @@ Overlays for BSS, stack, and heap region are in the works but are not ready yet.
 
 ## Installation
  
-If you just want to install the loader into a existing Ghidra installation:
+If you just want to install the loader into an existing Ghidra installation:
 
 1. Download the .zip from [releases](https://github.com/ecos-wtf/programstore-loader/releases) OR build the project.
-2. Put the .zip into the GHIDRA_INSTALL_DIR/Extensions/Ghidra folder
-3. In the initial window (not the Code Browser), open the File menu, and select Install Extensions. Click the small 'plus' icon in the top right of the window, and select the extension zip file downloaded. This should add an entry into the extensions list. Make sure it is checked and click OK.
+2. Put the `.zip` into the `GHIDRA_INSTALL_DIR/Extensions/Ghidra` folder.
+3. In the initial window (not the Code Browser), open **File > Install Extensions**. Click the plus icon, select the extension zip, enable the new extension, and click **OK**.
 4. Restart Ghidra.
 
 ## Build from Source
 
-Provided is an Eclipse project to debug and build the loader. You must have a Ghidra installation as well as the GhidraDev Eclipse extension.
+Ghidra 12.x requires JDK 21 and Gradle 8.5 or newer. Use the Gradle version accepted by the `application.gradle.min` and `application.gradle.max` values in your Ghidra installation's `Ghidra/application.properties` file.
 
-To export a build of the project in Eclipse select File > Export and then choose Ghidra > Ghidra Module Extension. You can then use a local Gradle installation or an online build.
+```sh
+export GHIDRA_INSTALL_DIR=/absolute/path/to/ghidra_12.x_PUBLIC
+gradle buildExtension
+```
+
+The installable extension archive is written to `dist/`. You can also import the project into Eclipse with the matching GhidraDev extension for debugging.
 
 ## Contributing & Support
 

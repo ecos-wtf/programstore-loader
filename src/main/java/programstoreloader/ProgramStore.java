@@ -1,22 +1,21 @@
 package programstoreloader;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.sql.Date;
 import java.util.Arrays;
 
-import ghidra.GhidraApplicationLayout;
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteProvider;
-import ghidra.framework.ApplicationProperties;
+import generic.jar.ResourceFile;
+import ghidra.framework.Application;
 
 
 public class ProgramStore {
+	public static final int HEADER_LENGTH = 92;
 	
 	public BcmProgramHeader bcmHeader;
 	
@@ -225,27 +224,35 @@ public class ProgramStore {
 		return (getDataCRC() == bcmHeader.ulcrc);
 	}
 	
-	private String getProgramStorePath() throws IOException {
-		
-		GhidraApplicationLayout appLayout = new GhidraApplicationLayout();
-		ApplicationProperties properties = appLayout.getApplicationProperties();
-		System.out.println(properties);
-		// 9.1.2: ~/ghidra_9.1.2/Ghidra/Extensions/ProgramStoreLoader
-		File f = new File(appLayout.getApplicationInstallationDir() + "/Ghidra/Extensions/ProgramStoreLoader/lib/ProgramStore");
-		if(f.exists()) {
-			return f.getCanonicalPath();
+	private File getProgramStoreExecutable() throws IOException {
+		File executable = null;
+
+		if (Application.isInitialized()) {
+			ResourceFile moduleRoot = Application.getModuleContainingClass(ProgramStore.class);
+			if (moduleRoot != null) {
+				ResourceFile resource = new ResourceFile(moduleRoot, "lib/ProgramStore");
+				if (resource.isFile()) {
+					executable = resource.getFile(true);
+				}
+			}
 		}
-		// 9.2: ~/.ghidra/.ghidra_9.2_PUBLIC/Extensions/ProgramStoreLoader
-		f = new File(appLayout.getUserSettingsDir() + "/Extensions/ProgramStoreLoader/lib/ProgramStore");
-		if(f.exists()) {
-			return f.getCanonicalPath();
+
+		// Supports running the extension directly from its source directory.
+		if (executable == null) {
+			File developmentExecutable = new File("lib/ProgramStore");
+			if (developmentExecutable.isFile()) {
+				executable = developmentExecutable;
+			}
 		}
-		// run/debug from Eclipse
-		f = new File("./lib/ProgramStore");
-		if(f.exists()) {
-			return f.getCanonicalPath();
+
+		if (executable == null || !executable.isFile()) {
+			throw new IOException("ProgramStore decompressor was not found in the extension");
 		}
-		return "";
+		if (!executable.canExecute()) {
+			throw new IOException(
+				"ProgramStore decompressor is not executable: " + executable.getAbsolutePath());
+		}
+		return executable.getCanonicalFile();
 	}
 	/**
 	 * Runs Broadcom's ProgramStore binary to extract 'infile' into
@@ -255,83 +262,59 @@ public class ProgramStore {
 	 * from https://github.com/Broadcom/aeolus.git
 	 * @param infile
 	 * @param outfile
-	 * @throws Exception 
-	 * @throws InterruptedException 
+	 * @throws IOException if the decompressor cannot be started or reports an error
 	 */
-	private void extract(String infile, String outfile) throws Exception {
-				
-		try {
-			String[] command = {getProgramStorePath(), "-x", "-f", infile, "-o", outfile};
-			Process process = Runtime.getRuntime().exec(command);
-		    process.waitFor();
-		    if(process.exitValue() == 0) {
-		    	BufferedReader reader = new BufferedReader(
-			            new InputStreamReader(process.getInputStream()));
-			    String line;
-			    while ((line = reader.readLine()) != null) {
-			        System.out.println(line);
-			    }
-			    reader.close();
-		    } else {
-		    	BufferedReader reader = new BufferedReader(
-			            new InputStreamReader(process.getErrorStream()));
-			    StringBuilder output = new StringBuilder();
-			    String line;
-			    while ((line = reader.readLine()) != null) {
-			        output.append(line);
-			    }
-			    reader.close();
-			    throw new Exception(output.toString());
-		    }
-		} catch (IOException | InterruptedException e) {
-		    throw e;
+	private void extract(String infile, String outfile) throws IOException {
+		File executable = getProgramStoreExecutable();
+		Process process = new ProcessBuilder(executable.getAbsolutePath(), "-x", "-f", infile,
+			"-o", outfile).redirectErrorStream(true).start();
+
+		String output;
+		try (InputStream processOutput = process.getInputStream()) {
+			output = new String(processOutput.readAllBytes(), StandardCharsets.UTF_8).trim();
 		}
-		
+
+		try {
+			int exitCode = process.waitFor();
+			if (exitCode != 0) {
+				String detail = output.isEmpty() ? "no diagnostic output" : output;
+				throw new IOException(
+					"ProgramStore decompression failed (exit " + exitCode + "): " + detail);
+			}
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while decompressing ProgramStore firmware", e);
+		}
 	}
 
 	/**
 	 * Writes compressed firmware to a temporary file, decompress it using ProgramStore
 	 * executable into another temporary file.
 	 * 
-	 * Reads the decompressed content into 'decompressed' byte array and delete both
+	 * Reads the decompressed content into the {@code decompressed} byte array and deletes both
 	 * temporary files.
-	 * @throws Exception 
+	 * @throws IOException if the temporary files or decompressor cannot be used
 	 */
-	public void decompress() throws Exception
-	{
-		File programStoreTempFile = File.createTempFile(bcmHeader.cFilename, ".programstore");
-        FileOutputStream fOutputStream = new FileOutputStream(programStoreTempFile);
-        fOutputStream.write(compressed);
-        fOutputStream.close();
-        
-        System.out.println("ProgramStore firmware written to: " + programStoreTempFile.getAbsolutePath());
-        
-        File rawFirmware = File.createTempFile(bcmHeader.cFilename, ".raw");
-        System.out.println("Temp file On Default Location: " + rawFirmware.getAbsolutePath());
-        
-        System.out.println("Launching ProgramStore extraction");
-        extract(programStoreTempFile.getAbsolutePath(), rawFirmware.getAbsolutePath());
+	public void decompress() throws IOException {
+		File programStoreTempFile = File.createTempFile("programstore-", ".programstore");
+		File rawFirmware = File.createTempFile("programstore-", ".raw");
 
-        System.out.println("Reading decompressed content.");
-        FileInputStream fInputStream = new FileInputStream(rawFirmware);
-        
-        byte[] tmp = fInputStream.readAllBytes();
-        fInputStream.close();
-        programStoreTempFile.delete();
-        rawFirmware.delete();
-        
-        // we remove trailing null bytes that have been padded by 
-        // ProgramStore executable
-        
-        if(tmp.length > 0) {
-        	var i = tmp.length - 1;
-            while (tmp[i] == 0) {
-                i--;
-            }
-            decompressed = Arrays.copyOf(tmp, i);
-        }else {
-        	decompressed = tmp;
-        }
+		try {
+			Files.write(programStoreTempFile.toPath(), compressed);
+			extract(programStoreTempFile.getAbsolutePath(), rawFirmware.getAbsolutePath());
+
+			byte[] tmp = Files.readAllBytes(rawFirmware.toPath());
+			int length = tmp.length;
+			while (length > 0 && tmp[length - 1] == 0) {
+				length--;
+			}
+			decompressed = Arrays.copyOf(tmp, length);
+		}
+		finally {
+			Files.deleteIfExists(programStoreTempFile.toPath());
+			Files.deleteIfExists(rawFirmware.toPath());
+		}
 	}
 	
 	/**

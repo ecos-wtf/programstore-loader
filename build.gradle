@@ -31,3 +31,24 @@ else {
 	throw new GradleException("GHIDRA_INSTALL_DIR is not defined!")
 }
 //----------------------END "DO NOT MODIFY" SECTION-------------------------------
+
+tasks.named("buildExtension") {
+	exclude ".agents/**", ".codex/**"
+	filesMatching("**/lib/ProgramStore") { details ->
+		details.permissions {
+			user {
+				read = true
+				write = true
+				execute = true
+			}
+			group {
+				read = true
+				execute = true
+			}
+			other {
+				read = true
+				execute = true
+			}
+		}
+	}
+}

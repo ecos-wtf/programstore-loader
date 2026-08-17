@@ -16,17 +16,13 @@
 package programstoreloader;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
 import docking.widgets.OkDialog;
-import ghidra.app.util.Option;
 import ghidra.app.util.bin.ByteProvider;
-import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.AbstractLibrarySupportLoader;
 import ghidra.app.util.opinion.LoadSpec;
-import ghidra.framework.model.DomainObject;
 import ghidra.framework.store.LockException;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOverflowException;
@@ -36,8 +32,8 @@ import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryConflictException;
+import ghidra.util.SystemUtilities;
 import ghidra.util.exception.CancelledException;
-import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.task.TaskMonitor;
 
 /**
@@ -45,8 +41,6 @@ import ghidra.util.task.TaskMonitor;
  * of cable modems.
  */
 public class ProgramStoreLoaderLoader extends AbstractLibrarySupportLoader {
-
-	public static final String OPTION_NAME_BASE_ADDR = "Base Address";
 	
 	@Override
 	public String getName() {
@@ -59,41 +53,48 @@ public class ProgramStoreLoaderLoader extends AbstractLibrarySupportLoader {
 		message += programStore.bcmHeader.toString().replace("\n", "<br/>") + "</html>";
 		OkDialog.showInfo("ProgramStore Info", message);
 	}
-	
-	private void promptShowErrorInfo(final Exception e) {
-		OkDialog.showError("Loading error", e.getMessage());
-	}
 
 	@Override
 	public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
+		if (provider.length() < ProgramStore.HEADER_LENGTH) {
+			return List.of();
+		}
 
 		ProgramStore programStore = new ProgramStore(provider);
 		
-		if(programStore.bcmHeader.isValidHeader()) {
-			System.out.println(programStore.bcmHeader);
-			promptShowHeaderInfo(programStore);
-			return List.of(new LoadSpec(this, 0, new LanguageCompilerSpecPair("MIPS:BE:32:default", "default"), true));
+		if (programStore.bcmHeader.isValidHeader()) {
+			LanguageCompilerSpecPair language =
+				new LanguageCompilerSpecPair("MIPS:BE:32:default", "default");
+			return List.of(new LoadSpec(this, 0, language, true));
 		}
-		return new ArrayList<>();
+		return List.of();
 	}
 
 	@Override
-	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options, Program program,
-			TaskMonitor monitor, MessageLog log) throws CancelledException, IOException {
+	protected void load(Program program, ImporterSettings settings)
+			throws CancelledException, IOException {
+		ByteProvider provider = settings.provider();
+		TaskMonitor monitor = settings.monitor();
 		
 		Memory mem = program.getMemory();
 		
 		monitor.setMessage("Loading ProgramStore firmware...");	
 		
-		//Handles the NDS format in detail
 		ProgramStore programStore = new ProgramStore(provider);
+		settings.log().appendMsg(programStore.bcmHeader.toString());
+		if (!SystemUtilities.isInHeadlessMode()) {
+			promptShowHeaderInfo(programStore);
+		}
 		
-		//Get decompressed blob
 		try {
 			programStore.decompress();
 		}
-		catch (Exception e) {
-			promptShowErrorInfo(e);
+		catch (IOException e) {
+			settings.log().appendException(e);
+			throw e;
+		}
+		if (programStore.getDataIndex() <= 0) {
+			throw new IOException("Decompressed ProgramStore image has no .data separator");
 		}
 		
 		// we create the .text segment
@@ -102,44 +103,38 @@ public class ProgramStoreLoaderLoader extends AbstractLibrarySupportLoader {
 		// TODO: create the heap overlay
 		// TODO: create the bss overlay
 		
-		System.out.println(String.format(".text start: 0x%08X\n", programStore.getTextOffset()));
-		System.out.println(String.format("data start: 0x%08X\n", programStore.getDataOffset()));
+		settings.log().appendMsg(String.format(".text start: 0x%08X", programStore.getTextOffset()));
+		settings.log().appendMsg(String.format(".data start: 0x%08X", programStore.getDataOffset()));
 		
 		try {
-			Address textAddr = program.getAddressFactory().getDefaultAddressSpace().getAddress(programStore.getTextOffset());
-			Address dataAddr =program.getAddressFactory().getDefaultAddressSpace().getAddress(programStore.getDataOffset());
+			Address textAddr = program.getAddressFactory()
+					.getDefaultAddressSpace()
+					.getAddress(programStore.getTextOffset());
+			Address dataAddr = program.getAddressFactory()
+					.getDefaultAddressSpace()
+					.getAddress(programStore.getDataOffset());
 			
-			MemoryBlock text_block = mem.createInitializedBlock(".text", textAddr, programStore.getTextLength(), (byte)0x00, monitor, false);
-			MemoryBlock data_block = mem.createInitializedBlock(".data", dataAddr, programStore.getDataLength(), (byte)0x00, monitor, false);
+			MemoryBlock textBlock = mem.createInitializedBlock(".text", textAddr,
+				programStore.getTextLength(), (byte) 0, monitor, false);
+			MemoryBlock dataBlock = mem.createInitializedBlock(".data", dataAddr,
+				programStore.getDataLength(), (byte) 0, monitor, false);
 			
 			//Set properties
-			text_block.setRead(true);
-			text_block.setWrite(true);
-			text_block.setExecute(true);
+			textBlock.setRead(true);
+			textBlock.setWrite(true);
+			textBlock.setExecute(true);
 			
-			data_block.setRead(true);
-			data_block.setWrite(true);
-			data_block.setExecute(false);
+			dataBlock.setRead(true);
+			dataBlock.setWrite(true);
+			dataBlock.setExecute(false);
 			
 			//Fill the main memory segment with the decompressed data/code.
 			mem.setBytes(textAddr, programStore.getText());
 			mem.setBytes(dataAddr, programStore.getData());
 	
-		} catch (LockException | DuplicateNameException | MemoryConflictException | AddressOverflowException
-				| CancelledException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (MemoryAccessException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+		} catch (LockException | MemoryConflictException | AddressOverflowException |
+				MemoryAccessException | IllegalArgumentException e) {
+			throw new IOException("Unable to map the decompressed ProgramStore image", e);
 		}
-	}
-
-	@Override
-	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
-			DomainObject domainObject, boolean isLoadIntoProgram) {
-		List<Option> list =
-			super.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
-		return list;
 	}
 }
